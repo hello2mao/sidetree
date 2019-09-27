@@ -1,6 +1,6 @@
 import * as retry from 'async-retry';
+import AnchorFile from '../../lib/core/versions/latest/AnchorFile';
 import AnchorFileModel from '../../lib/core/versions/latest/models/AnchorFileModel';
-import BatchFileModel from '../../lib/core/versions/latest/models/BatchFileModel';
 import Blockchain from '../../lib/core/Blockchain';
 import Cas from '../../lib/core/Cas';
 import DownloadManager from '../../lib/core/DownloadManager';
@@ -14,6 +14,10 @@ import TransactionProcessor from '../../lib/core/versions/latest/TransactionProc
 import { FetchResultCode } from '../../lib/common/FetchResultCode';
 import { MockTransactionStore } from '../mocks/MockTransactionStore';
 import { SidetreeError } from '../../lib/core/Error';
+import OperationGenerator from '../generators/OperationGenerator';
+import BatchFile from '../../lib/core/versions/latest/BatchFile';
+import Cryptography from '../../lib/core/versions/latest/util/Cryptography';
+import Operation from '../../lib/core/versions/latest/Operation';
 
 describe('Observer', async () => {
   const config = require('../json/config-test.json');
@@ -119,28 +123,45 @@ describe('Observer', async () => {
     expect(processedTransactions[1].anchorString).toEqual('2ndTransaction');
   });
 
-  it('should process a valid operation batch successfully.', async () => {
+  fit('should process a valid operation batch successfully.', async () => {
     // Prepare the mock response from the DownloadManager.
-    const anchorFile: AnchorFileModel = {
-      batchFileHash: 'EiB4ypIXxG9aFhXv2YC8I2tQvLEBbQAsNzHmph17vMfVYA',
-      didUniqueSuffixes: ['EiA-GtHEOH9IcEEoBQ9p1KCMIjTmTO8x2qXJPb20ry6C0A', 'EiA4zvhtvzTdeLAg8_Pvdtk5xJreNuIpvSpCCbtiTVc8Ow'],
-      merkleRoot: 'EiB4ypIXxG9aFhXv2YC8I2tQvLEBbQAsNzHmph17vMfVYA'
-    };
-    const anchoreFileFetchResult: FetchResult = {
-      code: FetchResultCode.Success,
-      content: Buffer.from(JSON.stringify(anchorFile))
-    };
-    const batchFile: BatchFileModel = {
-      /* tslint:disable */
-      operations: [
-        'eyJwYXlsb2FkIjoiZXlKamNtVmhkR1ZrSWpvaU1qQXhPUzB3TmkweE5GUXlNam94TkRvME5pNDVORE5hSWl3aVFHTnZiblJsZUhRaU9pSm9kSFJ3Y3pvdkwzY3phV1F1YjNKbkwyUnBaQzkyTVNJc0luQjFZbXhwWTB0bGVTSTZXM3NpYVdRaU9pSWphMlY1TVNJc0luUjVjR1VpT2lKVFpXTndNalUyYXpGV1pYSnBabWxqWVhScGIyNUxaWGt5TURFNElpd2ljSFZpYkdsalMyVjVTbmRySWpwN0ltdHBaQ0k2SWlOclpYa3hJaXdpYTNSNUlqb2lSVU1pTENKaGJHY2lPaUpGVXpJMU5rc2lMQ0pqY25ZaU9pSlFMVEkxTmtzaUxDSjRJam9pTjFGWFRVUjFkRmh3UkdodFVFcHhPWGxDWmxNMmVWVmpaMmxQVDJWTWIxVmplazVPVW5Wd1ZEZElNQ0lzSW5raU9pSnRNVVJIVWpCMldEZHNXRlZLTWtwcU1WQmtNRU5yZWxneFVuSkxiVmhuZERSNk5tMUZUV0Y1ZDNCSkluMTlYWDAiLCJzaWduYXR1cmUiOiJNRVVDSUNnWXk3TmRuRDhZVmhsTXhqaWFJVW11d3VhRHliM2xjNVAzZFVPSlpmVUpBaUVBMGtNbi03anFuaFQtMm5RVk52YldXRmk1NkNDajMweEVZRWxDNmFCMXVRayIsInByb3RlY3RlZCI6ImUzMCIsImhlYWRlciI6eyJvcGVyYXRpb24iOiJjcmVhdGUiLCJwcm9vZk9mV29yayI6IiIsImtpZCI6IiNrZXkxIiwiYWxnIjoiRVMyNTZLIn19',
-        'eyJwYXlsb2FkIjoiZXlKamNtVmhkR1ZrSWpvaU1qQXhPUzB3TmkweE5GUXlNam95TVRveE55NDVOalphSWl3aVFHTnZiblJsZUhRaU9pSm9kSFJ3Y3pvdkwzY3phV1F1YjNKbkwyUnBaQzkyTVNJc0luQjFZbXhwWTB0bGVTSTZXM3NpYVdRaU9pSWphMlY1TVNJc0luUjVjR1VpT2lKVFpXTndNalUyYXpGV1pYSnBabWxqWVhScGIyNUxaWGt5TURFNElpd2ljSFZpYkdsalMyVjVTbmRySWpwN0ltdHBaQ0k2SWlOclpYa3hJaXdpYTNSNUlqb2lSVU1pTENKaGJHY2lPaUpGVXpJMU5rc2lMQ0pqY25ZaU9pSlFMVEkxTmtzaUxDSjRJam9pTjFGWFRVUjFkRmh3UkdodFVFcHhPWGxDWmxNMmVWVmpaMmxQVDJWTWIxVmplazVPVW5Wd1ZEZElNQ0lzSW5raU9pSnRNVVJIVWpCMldEZHNXRlZLTWtwcU1WQmtNRU5yZWxneFVuSkxiVmhuZERSNk5tMUZUV0Y1ZDNCSkluMTlYWDAiLCJzaWduYXR1cmUiOiJNRVFDSUQ3bjd5Rkk2Smc0aHpKcl9taTY2NjM1X2pPV0RGZnBucmRzMXA4X1ZWRDhBaUFzTEkwTC13WFpUdEhBNExXX0FDZlVBS1N1SEdwYWJhNXVxZXZTQTJkempRIiwicHJvdGVjdGVkIjoiZTMwIiwiaGVhZGVyIjp7Im9wZXJhdGlvbiI6ImNyZWF0ZSIsInByb29mT2ZXb3JrIjoiIiwia2lkIjoiI2tleTEiLCJhbGciOiJFUzI1NksifX0'
-      ]
-      /* tslint:enable */
-    };
+    const didDocumentTemplate = require('../json/didDocumentTemplate.json');
+
+    // const batchFile: BatchFileModel = {
+    //   /* tslint:disable */
+    //   operations: [
+    //     Buffer.from(JSON.stringify(await OperationGenerator.generateCreateOperation(didDocumentTemplate, {id: 'publickeyid', type: 'type'}, 'privatekey'))),
+    //     Buffer.from(JSON.stringify(await OperationGenerator.generateCreateOperation(didDocumentTemplate, {id: 'publickeyid', type: 'type'}, 'privatekey')))
+    //   ]
+    //   /* tslint:enable */
+    // };
+
+    const [publicKey, privateKey] = await Cryptography.generateKeyPairHex('#key1');
+    const operations = [
+      await OperationGenerator.generateCreateOperation(didDocumentTemplate, publicKey, privateKey),
+      await OperationGenerator.generateCreateOperation(didDocumentTemplate, publicKey, privateKey)
+    ];
+    const operationsBuffer = operations.map((op) => { return Buffer.from(JSON.stringify(op)); });
+    const batchFileBuffer = await BatchFile.fromOperationBuffers(operationsBuffer);
+
+    // const batchFileCompressedBuffer = await BatchFile.fromOperationBuffers
     const batchFileFetchResult: FetchResult = {
       code: FetchResultCode.Success,
-      content: Buffer.from(JSON.stringify(batchFile))
+      content: batchFileBuffer // Buffer.from(JSON.stringify(batchFile))
+    };
+
+    const operationDids = operations.map((op) => { return (op as any).didUniqueSuffix; });
+    const anchorFile: AnchorFileModel = {
+      batchFileHash: operationsBuffer.toString(),
+      didUniqueSuffixes: operationDids,
+      merkleRoot: 'EiB4ypIXxG9aFhXv2YC8I2tQvLEBbQAsNzHmph17vMfVYA'
+    };
+
+    const anchorFileCompressedBuffer = await AnchorFile.createBufferFromAnchorFileModel(anchorFile);
+
+    const anchoreFileFetchResult: FetchResult = {
+      code: FetchResultCode.Success,
+      content: anchorFileCompressedBuffer
     };
 
     const mockDownloadFunction = async (hash: string) => {
